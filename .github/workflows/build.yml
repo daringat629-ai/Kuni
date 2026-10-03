@@ -1,0 +1,43 @@
+name: Alpine 256MB build
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    name: build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    container:
+      image: alpine:edge
+    steps:
+      - name: Deps
+        run: |
+          apk add --no-cache nodejs git unzip build-base cmake ninja pkgconf linux-headers \
+            openssl-dev zlib-dev curl-dev fontconfig-dev freetype-dev libxcursor-dev \
+            libxi-dev libxrandr-dev libx11-dev glew-dev mesa-dev pulseaudio-dev dbus-dev \
+            libepoxy-dev gperf php84-cli bash
+          g++ --version | head -1
+      - uses: actions/checkout@v4
+      - name: Unpack
+        run: unzip -q ./*.zip
+      - name: Build
+        working-directory: kuni-master
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=MinSizeRel \
+            -DCMAKE_CXX_FLAGS_MINSIZEREL="-Os -DNDEBUG -g0 -ffunction-sections -fdata-sections" \
+            -DCMAKE_EXE_LINKER_FLAGS="-Wl,--gc-sections -s" \
+            -DKUNI_BUILD_TESTS=OFF -DKUNI_USE_FFMPEG=OFF
+          cmake --build build --target kuni --parallel 2
+          mkdir out
+          cp build/bin/kuni out/
+          ldd out/kuni | tee out/ldd.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kuni-alpine-${{ matrix.arch }}
+          path: kuni-master/out/
