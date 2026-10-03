@@ -3,41 +3,40 @@ on:
   workflow_dispatch:
 jobs:
   build:
-    name: build (${{ matrix.arch }})
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-latest
-          - arch: aarch64
-            runner: ubuntu-24.04-arm
-    container:
-      image: alpine:edge
+    runs-on: ubuntu-24.04
     steps:
-      - name: Deps
-        run: |
-          apk add --no-cache nodejs git unzip build-base cmake ninja pkgconf linux-headers \
-            openssl-dev zlib-dev curl-dev fontconfig-dev freetype-dev libxcursor-dev \
-            libxi-dev libxrandr-dev libx11-dev glew-dev mesa-dev pulseaudio-dev dbus-dev \
-            libepoxy-dev gperf php84-cli bash
-          g++ --version | head -1
       - uses: actions/checkout@v4
       - name: Unpack
         run: unzip -q ./*.zip
+      - name: Deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libglew-dev zlib1g-dev libssl-dev libcrypt-dev \
+            libcurl4-openssl-dev libgtk-4-dev libadwaita-1-dev libdbus-1-dev \
+            libfontconfig-dev ninja-build libpulse-dev gperf
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 22 all
+      - name: Configure
+        working-directory: kuni-master
+        env:
+          CC: clang-22
+          CXX: clang++-22
+        run: |
+          cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=MinSizeRel \
+            -DCMAKE_CXX_FLAGS_MINSIZEREL="-Os -DNDEBUG -g0" \
+            -DCMAKE_EXE_LINKER_FLAGS="-static-libstdc++ -Wl,--gc-sections -s" \
+            -DKUNI_BUILD_TESTS=OFF -DKUNI_USE_FFMPEG=OFF
       - name: Build
         working-directory: kuni-master
+        run: cmake --build build --target kuni --parallel 3
+      - name: Collect
+        working-directory: kuni-master
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=MinSizeRel \
-            -DCMAKE_CXX_FLAGS_MINSIZEREL="-Os -DNDEBUG -g0 -ffunction-sections -fdata-sections" \
-            -DCMAKE_EXE_LINKER_FLAGS="-Wl,--gc-sections -s" \
-            -DKUNI_BUILD_TESTS=OFF -DKUNI_USE_FFMPEG=OFF
-          cmake --build build --target kuni --parallel 2
           mkdir out
           cp build/bin/kuni out/
           ldd out/kuni | tee out/ldd.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: kuni-alpine-${{ matrix.arch }}
+          name: kuni-ubuntu-x86_64
           path: kuni-master/out/
